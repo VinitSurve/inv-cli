@@ -18,4 +18,3 @@ def test_clean_version() -> None:
     assert Normalizer.clean_version("  v2.0.0-rc1  ") == "2.0.0-rc1"
     assert Normalizer.clean_version(None) == "unknown"
     assert Normalizer.clean_version("3.11.4") == "3.11.4"
-

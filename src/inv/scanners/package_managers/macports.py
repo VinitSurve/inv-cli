@@ -60,4 +60,3 @@ class MacPortsScanner(BaseScanner):
                 result.installations.append(inst)
 
         return result
-

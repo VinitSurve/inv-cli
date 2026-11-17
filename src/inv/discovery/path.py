@@ -46,4 +46,3 @@ def is_executable_file(path: Path) -> bool:
         return os.access(str(path), os.X_OK)
     except (OSError, PermissionError):
         return False
-

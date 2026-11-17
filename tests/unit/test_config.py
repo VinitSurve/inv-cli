@@ -31,4 +31,3 @@ def test_config_save_and_load(temp_dir: Path) -> None:
     assert loaded.max_depth == 3
     assert loaded.process_timeout == 30.0
     assert loaded.disabled_scanners == ["docker", "macports"]
-

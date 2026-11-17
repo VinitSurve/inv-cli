@@ -25,4 +25,3 @@ def test_is_safe_subpath() -> None:
 def test_normalize_path() -> None:
     norm = normalize_path(".")
     assert norm.is_absolute()
-

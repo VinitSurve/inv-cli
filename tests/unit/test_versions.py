@@ -22,4 +22,3 @@ def test_parse_version() -> None:
 
     assert parse_version("invalid-string") is None
     assert parse_version(None) is None
-

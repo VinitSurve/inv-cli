@@ -40,4 +40,3 @@ def test_reconcile_dependencies() -> None:
     r_map = {d.name: d.status for d in reconciled}
     assert r_map["rich"] == DependencyStatus.INSTALLED
     assert r_map["nonexistent-pkg"] == DependencyStatus.DECLARED
-

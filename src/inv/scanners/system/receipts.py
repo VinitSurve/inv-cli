@@ -58,4 +58,3 @@ class PkgutilReceiptScanner(BaseScanner):
             result.installations.append(inst)
 
         return result
-

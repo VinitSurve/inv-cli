@@ -1,2 +1,1 @@
 """Scanner framework and adapters."""
-

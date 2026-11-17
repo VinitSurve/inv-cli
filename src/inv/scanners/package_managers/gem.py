@@ -62,4 +62,3 @@ class GemScanner(BaseScanner):
                         result.installations.append(inst)
 
         return result
-

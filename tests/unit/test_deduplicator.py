@@ -58,4 +58,3 @@ def test_find_multi_manager_packages() -> None:
     assert len(multi) == 1
     assert multi[0].name == "ripgrep"
     assert len(multi[0].installations) == 2
-

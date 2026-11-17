@@ -114,5 +114,3 @@ def test_cli_search() -> None:
 def test_cli_info() -> None:
     res = runner.invoke(app, ["info", "python"])
     assert res.exit_code == 0
-
-
