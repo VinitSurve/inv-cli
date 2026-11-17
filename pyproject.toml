@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "inv"
-version = "1.0.0"
-description = "A comprehensive macOS-first software inventory tool that discovers packages, applications, binaries, programming languages, development environments, project dependencies, and other installed software."
+version = "1.1.0"
+description = "A comprehensive macOS software inventory, controlled package lifecycle management, and security audit CLI."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"

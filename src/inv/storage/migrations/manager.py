@@ -193,6 +193,94 @@ CREATE INDEX IF NOT EXISTS idx_envs_session ON environments(session_id);
 """
 
 
+SCHEMA_V2 = """
+CREATE TABLE IF NOT EXISTS vulnerabilities (
+    id TEXT PRIMARY KEY,
+    advisory_id TEXT NOT NULL,
+    package_name TEXT NOT NULL,
+    ecosystem TEXT NOT NULL,
+    installed_version TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    title TEXT NOT NULL,
+    affected_range TEXT NOT NULL,
+    fixed_version TEXT,
+    cve_id TEXT,
+    ghsa_id TEXT,
+    osv_id TEXT,
+    cvss_score REAL,
+    advisory_url TEXT,
+    details TEXT,
+    dependency_type TEXT DEFAULT 'direct',
+    introduced_by TEXT,
+    data_source TEXT DEFAULT 'osv',
+    fix_available INTEGER DEFAULT 0,
+    remediation_status TEXT DEFAULT 'open',
+    published_at TEXT,
+    scanned_at TEXT NOT NULL,
+    session_id TEXT,
+    FOREIGN KEY(session_id) REFERENCES scan_sessions(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS lifecycle_operations (
+    id TEXT PRIMARY KEY,
+    operation_type TEXT NOT NULL,
+    target_package TEXT NOT NULL,
+    manager TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    target_version TEXT,
+    previous_version TEXT,
+    proposed_version TEXT,
+    status TEXT NOT NULL,
+    risk_level TEXT NOT NULL,
+    risk_reasons_json TEXT DEFAULT '[]',
+    actions_json TEXT DEFAULT '[]',
+    dependency_changes_json TEXT DEFAULT '[]',
+    reverse_dependencies_json TEXT DEFAULT '[]',
+    rollback_available INTEGER DEFAULT 0,
+    rollback_instructions TEXT,
+    created_at TEXT NOT NULL,
+    approved_at TEXT,
+    executed_at TEXT,
+    verified_at TEXT,
+    logs_json TEXT DEFAULT '[]',
+    metadata_json TEXT DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS operation_events (
+    id TEXT PRIMARY KEY,
+    operation_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    message TEXT NOT NULL,
+    data_json TEXT DEFAULT '{}',
+    FOREIGN KEY(operation_id) REFERENCES lifecycle_operations(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS outdated_packages (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    manager TEXT NOT NULL,
+    installed_version TEXT NOT NULL,
+    latest_version TEXT NOT NULL,
+    latest_stable_version TEXT NOT NULL,
+    latest_compatible_version TEXT NOT NULL,
+    update_strategy TEXT NOT NULL,
+    is_major_update INTEGER DEFAULT 0,
+    checked_at TEXT NOT NULL,
+    session_id TEXT,
+    FOREIGN KEY(session_id) REFERENCES scan_sessions(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_vuln_pkg ON vulnerabilities(package_name);
+CREATE INDEX IF NOT EXISTS idx_vuln_severity ON vulnerabilities(severity);
+CREATE INDEX IF NOT EXISTS idx_vuln_session ON vulnerabilities(session_id);
+CREATE INDEX IF NOT EXISTS idx_op_status ON lifecycle_operations(status);
+CREATE INDEX IF NOT EXISTS idx_op_target ON lifecycle_operations(target_package);
+CREATE INDEX IF NOT EXISTS idx_op_events ON operation_events(operation_id);
+CREATE INDEX IF NOT EXISTS idx_outdated_mgr ON outdated_packages(manager);
+"""
+
+
 def apply_migrations(conn: sqlite3.Connection) -> None:
     """Apply database migrations up to current version."""
     cursor = conn.cursor()
@@ -208,4 +296,11 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
         cursor.execute(
             "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?);",
             (1, utc_now_iso()),
+        )
+
+    if current_version < 2:
+        cursor.executescript(SCHEMA_V2)
+        cursor.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?);",
+            (2, utc_now_iso()),
         )

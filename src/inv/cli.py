@@ -11,11 +11,22 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from inv import __version__
+from inv.adapters.registry import LifecycleRegistry
 from inv.config import InvConfig
-from inv.constants import APP_DISPLAY_NAME
+from inv.constants import (
+    APP_DISPLAY_NAME,
+    LifecycleCapability,
+    OperationState,
+    UpdateStrategy,
+    VulnerabilitySeverity,
+)
 from inv.core.coverage import CoverageAnalyzer
 from inv.core.deduplicator import Deduplicator
+from inv.core.dependency_graph import DependencyGraph
 from inv.core.engine import InventoryEngine
+from inv.lifecycle.approvals import ModificationRefusedError, request_operation_approval
+from inv.lifecycle.executor import LifecycleExecutor
+from inv.lifecycle.planner import LifecyclePlanner
 from inv.output.csv import (
     export_installations_csv,
 )
@@ -27,12 +38,19 @@ from inv.output.terminal import (
     render_environments_table,
     render_executables_table,
     render_installations_table,
+    render_operation_plan_panel,
+    render_operations_table,
+    render_outdated_table,
     render_overview,
+    render_package_info,
     render_project_tree,
     render_projects_table,
     render_runtimes_table,
     render_scanner_status_table,
 )
+from inv.security.engine import SecurityEngine
+from inv.security.remediation import RemediationEngine
+from inv.security.reporting import export_security_report_json, render_security_audit_table
 
 app = typer.Typer(
     name="inv",
@@ -261,18 +279,27 @@ def containers_cmd() -> None:
 
 @app.command(name="managers")
 def managers_cmd() -> None:
-    """Display detection status and availability of all package managers."""
+    """Display detection status, availability, and lifecycle support of all package managers."""
     engine = InventoryEngine()
+    lifecycle_reg = LifecycleRegistry()
     scanners = [s for s in engine.registry.list_all() if s.domain == "package_manager"]
-    table = Table(title="Package Manager Detection Status", pad_edge=False)
-    table.add_column("Manager", style="bold white", min_width=20)
-    table.add_column("Available?", min_width=15)
-    table.add_column("Scanner Version", style="dim", min_width=15)
+    table = Table(title="Package Manager Detection Status & Lifecycle Capabilities", pad_edge=False)
+    table.add_column("Manager", style="bold white", min_width=18)
+    table.add_column("Inventory Detection", min_width=16)
+    table.add_column("Lifecycle Support", min_width=16)
+    table.add_column("Supported Operations", style="dim", min_width=24)
 
     for s in scanners:
         avail = s.is_available()
         status_str = "[bold green]Available[/bold green]" if avail else "[dim]Not Found[/dim]"
-        table.add_row(s.name, status_str, s.version)
+        adapter = lifecycle_reg.get(s.scanner_id)
+        if adapter and adapter.supported_capabilities:
+            life_str = "[bold green]Supported[/bold green]"
+            ops_str = ", ".join(c.value for c in sorted(adapter.supported_capabilities))
+        else:
+            life_str = "[dim]Discovery Only[/dim]"
+            ops_str = "read-only"
+        table.add_row(s.name, status_str, life_str, ops_str)
 
     console.print(table)
 
@@ -599,6 +626,653 @@ def config_cmd(
     data = cfg.to_dict()
     for k, v in data.items():
         console.print(f"  [bold white]{k}:[/bold white] [cyan]{v}[/cyan]")
+
+
+# ==============================================================================
+# PACKAGE LIFECYCLE & SECURITY COMMANDS
+# ==============================================================================
+
+
+@app.command(name="outdated")
+def outdated_cmd(
+    manager: Annotated[
+        str | None, typer.Option("--manager", "-m", help="Filter by package manager.")
+    ] = None,
+) -> None:
+    """Find installed packages with available updates."""
+    engine = InventoryEngine()
+    lifecycle_reg = LifecycleRegistry()
+
+    adapters = [lifecycle_reg.get(manager)] if manager else lifecycle_reg.list_all()
+    active_adapters = [
+        a
+        for a in adapters
+        if a and a.is_available() and a.supports(LifecycleCapability.CHECK_OUTDATED)
+    ]
+
+    all_outdated = []
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Checking package managers for updates...", total=None)
+        for a in active_adapters:
+            progress.update(task, description=f"Checking {a.display_name}...")
+            try:
+                pkgs = a.check_outdated()
+                all_outdated.extend(pkgs)
+                with engine.get_repository() as repo:
+                    for p in pkgs:
+                        repo.save_outdated_package(p)
+            except Exception:
+                pass
+
+    render_outdated_table(all_outdated)
+
+
+@app.command(name="package")
+def package_cmd(
+    name: Annotated[str, typer.Argument(help="Package name to inspect.")],
+    manager: Annotated[
+        str | None, typer.Option("--manager", "-m", help="Filter by package manager.")
+    ] = None,
+) -> None:
+    """Show detailed package metadata, dependencies, and ownership."""
+    engine = InventoryEngine()
+    lifecycle_reg = LifecycleRegistry()
+
+    with engine.get_repository() as repo:
+        try:
+            adapter = lifecycle_reg.resolve_manager_for_package(
+                package_name=name,
+                explicit_manager=manager,
+                repo=repo,
+            )
+            info = adapter.get_package_info(name)
+            if info:
+                # Augment with reverse dependency graph
+                graph = DependencyGraph(repo)
+                info.reverse_dependencies = graph.get_reverse_dependencies(name)
+                render_package_info(info)
+                return
+        except ValueError as exc:
+            console.print(f"[bold red]Error:[/bold red] {exc}")
+            raise typer.Exit(code=1) from exc
+
+    console.print(f"[yellow]No detailed package information found for '{name}'.[/yellow]")
+
+
+@app.command(name="versions")
+def versions_cmd(
+    name: Annotated[str, typer.Argument(help="Package name.")],
+    manager: Annotated[
+        str | None, typer.Option("--manager", "-m", help="Filter by package manager.")
+    ] = None,
+) -> None:
+    """Display available versions for a package where supported."""
+    engine = InventoryEngine()
+    lifecycle_reg = LifecycleRegistry()
+
+    with engine.get_repository() as repo:
+        try:
+            adapter = lifecycle_reg.resolve_manager_for_package(
+                package_name=name,
+                explicit_manager=manager,
+                repo=repo,
+            )
+            versions = adapter.list_versions(name)
+            if versions:
+                console.print(
+                    f"\n[bold]Available versions for [cyan]{name}[/cyan] ({adapter.display_name}):[/bold]"
+                )
+                for v in versions:
+                    console.print(f"  • [green]{v}[/green]")
+            else:
+                console.print(
+                    f"[yellow]Version listing is not available for '{name}' via {adapter.display_name}.[/yellow]"
+                )
+        except ValueError as exc:
+            console.print(f"[bold red]Error:[/bold red] {exc}")
+            raise typer.Exit(code=1) from exc
+
+
+@app.command(name="why")
+def why_cmd(
+    name: Annotated[str, typer.Argument(help="Package name.")],
+) -> None:
+    """Explain why a package is installed and which packages depend on it."""
+    engine = InventoryEngine()
+    with engine.get_repository() as repo:
+        graph = DependencyGraph(repo)
+        why_data = graph.get_why(name)
+
+        console.print(
+            Panel(
+                f"[bold white]Package:[/bold white] [bold cyan]{why_data['name']}[/bold cyan]\n"
+                f"[bold white]Owning Manager:[/bold white] {why_data['manager']}\n"
+                f"[bold white]Installed Version:[/bold white] {why_data['installed_version']}\n\n"
+                + "\n".join(why_data["explanation"]),
+                title=f"[bold cyan]Dependency Analysis — {name}[/bold cyan]",
+                border_style="cyan",
+            )
+        )
+
+        if why_data["reverse_dependencies"]:
+            console.print(
+                f"\n[bold red]Required By ({len(why_data['reverse_dependencies'])} package(s)):[/bold red]"
+            )
+            for rev in why_data["reverse_dependencies"]:
+                console.print(f"  • [yellow]{rev}[/yellow]")
+
+
+@app.command(name="install")
+def install_cmd(
+    package_spec: Annotated[
+        str,
+        typer.Argument(help="Package to install (e.g., 'ripgrep' or 'ruff@0.3.4')."),
+    ],
+    manager: Annotated[
+        str | None, typer.Option("--manager", "-m", help="Target package manager.")
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Preview installation plan without modifying system."),
+    ] = False,
+) -> None:
+    """Install a package with two-stage planning and explicit user approval."""
+    # Split package and version if specified via @
+    pkg_name = package_spec
+    version_spec = None
+    if "@" in package_spec and not package_spec.startswith("@"):
+        pkg_name, version_spec = package_spec.split("@", 1)
+
+    engine = InventoryEngine()
+    with engine.get_repository() as repo:
+        planner = LifecyclePlanner(repo)
+        try:
+            plan = planner.plan_install(
+                package=pkg_name,
+                version=version_spec,
+                manager=manager,
+            )
+        except Exception as exc:
+            console.print(f"[bold red]Planning Error:[/bold red] {exc}")
+            raise typer.Exit(code=1) from exc
+
+        render_operation_plan_panel(plan, title="INV — INSTALLATION PLAN")
+
+        if dry_run:
+            console.print("[dim]Dry run requested — skipping execution.[/dim]")
+            return
+
+        try:
+            approved = request_operation_approval(plan)
+            if not approved:
+                console.print("[yellow]Installation cancelled by user.[/yellow]")
+                repo.update_lifecycle_operation_status(plan.id, OperationState.CANCELLED)
+                return
+
+            plan.status = OperationState.APPROVED
+            executor = LifecycleExecutor(repo)
+            result = executor.execute(plan, dry_run=False)
+
+            if result.status == OperationState.COMPLETED:
+                console.print(
+                    f"[bold green]✓ Successfully installed {pkg_name} via {plan.manager}.[/bold green]"
+                )
+            elif result.status == OperationState.VERIFICATION_FAILED:
+                console.print(
+                    f"[bold red]✗ Installation of {pkg_name} completed, but post-operation verification failed.[/bold red]"
+                )
+                raise typer.Exit(code=2)
+            else:
+                console.print(
+                    f"[bold red]✗ Failed to install {pkg_name}. Check operation log {plan.id}.[/bold red]"
+                )
+                raise typer.Exit(code=1)
+        except ModificationRefusedError as m_exc:
+            console.print(f"[bold red]Refusal Policy:[/bold red] {m_exc}")
+            raise typer.Exit(code=1) from m_exc
+
+
+@app.command(name="remove")
+def remove_cmd(
+    package: Annotated[str, typer.Argument(help="Package name to uninstall.")],
+    manager: Annotated[
+        str | None, typer.Option("--manager", "-m", help="Target package manager.")
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Preview removal without modifying system.")
+    ] = False,
+) -> None:
+    """Uninstall a package with dependency impact analysis and explicit approval."""
+    engine = InventoryEngine()
+    with engine.get_repository() as repo:
+        planner = LifecyclePlanner(repo)
+        try:
+            plan = planner.plan_remove(package=package, manager=manager)
+        except Exception as exc:
+            console.print(f"[bold red]Planning Error:[/bold red] {exc}")
+            raise typer.Exit(code=1) from exc
+
+        render_operation_plan_panel(plan, title="INV — REMOVAL PLAN")
+
+        if dry_run:
+            console.print("[dim]Dry run requested — skipping execution.[/dim]")
+            return
+
+        try:
+            approved = request_operation_approval(plan)
+            if not approved:
+                console.print("[yellow]Removal cancelled by user.[/yellow]")
+                repo.update_lifecycle_operation_status(plan.id, OperationState.CANCELLED)
+                return
+
+            plan.status = OperationState.APPROVED
+            executor = LifecycleExecutor(repo)
+            result = executor.execute(plan, dry_run=False)
+
+            if result.status == OperationState.COMPLETED:
+                console.print(
+                    f"[bold green]✓ Successfully removed {package} via {plan.manager}.[/bold green]"
+                )
+            else:
+                console.print(
+                    f"[bold red]✗ Failed to remove {package}. Check operation log {plan.id}.[/bold red]"
+                )
+                raise typer.Exit(code=1)
+        except ModificationRefusedError as m_exc:
+            console.print(f"[bold red]Refusal Policy:[/bold red] {m_exc}")
+            raise typer.Exit(code=1) from m_exc
+
+
+@app.command(name="upgrade")
+def upgrade_cmd(
+    package: Annotated[str | None, typer.Argument(help="Specific package to upgrade.")] = None,
+    all_packages: Annotated[
+        bool,
+        typer.Option(
+            "--all",
+            "-a",
+            help="Generate batch upgrade plan for all outdated packages.",
+        ),
+    ] = False,
+    strategy: Annotated[
+        str,
+        typer.Option("--strategy", "-s", help="Upgrade strategy: 'compatible' or 'latest'."),
+    ] = "compatible",
+    manager: Annotated[
+        str | None, typer.Option("--manager", "-m", help="Filter by package manager.")
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Preview upgrade without modifying system.")
+    ] = False,
+) -> None:
+    """Upgrade one or all outdated packages with safety previews and explicit confirmation."""
+    engine = InventoryEngine()
+    strat_enum = (
+        UpdateStrategy.LATEST if strategy.lower() == "latest" else UpdateStrategy.COMPATIBLE
+    )
+
+    with engine.get_repository() as repo:
+        planner = LifecyclePlanner(repo)
+        executor = LifecycleExecutor(repo)
+
+        if all_packages:
+            plans = planner.plan_batch_upgrade(strategy=strat_enum, manager=manager)
+            if not plans:
+                console.print("[bold green]✓ No outdated packages found to upgrade.[/bold green]")
+                return
+
+            console.print(
+                f"\n[bold cyan]INV — BATCH UPGRADE PLAN ({len(plans)} package(s))[/bold cyan]\n"
+            )
+            for p in plans:
+                render_operation_plan_panel(p, title=f"UPGRADE: {p.target_package}")
+
+            if dry_run:
+                console.print("[dim]Dry run requested — skipping execution.[/dim]")
+                return
+
+            try:
+                # Batch confirmation prompt
+                confirm = typer.confirm(
+                    f"Confirm upgrading all {len(plans)} package(s)?", default=False
+                )
+                if not confirm:
+                    console.print("[yellow]Batch upgrade cancelled by user.[/yellow]")
+                    return
+
+                for p in plans:
+                    p.status = OperationState.APPROVED
+                    res = executor.execute(p, dry_run=False)
+                    if res.status == OperationState.COMPLETED:
+                        console.print(f"[green]✓ Upgraded {p.target_package}.[/green]")
+                    else:
+                        console.print(
+                            f"[red]✗ Upgrade failed on {p.target_package}. Halting batch.[/red]"
+                        )
+                        break
+            except Exception as exc:
+                console.print(f"[bold red]Execution Error:[/bold red] {exc}")
+                raise typer.Exit(code=1) from exc
+            return
+
+        if not package:
+            console.print("[yellow]Please specify a package name to upgrade or use --all.[/yellow]")
+            raise typer.Exit(code=1)
+
+        try:
+            plan = planner.plan_upgrade(
+                package=package,
+                strategy=strat_enum,
+                manager=manager,
+            )
+        except Exception as exc:
+            console.print(f"[bold red]Planning Error:[/bold red] {exc}")
+            raise typer.Exit(code=1) from exc
+
+        render_operation_plan_panel(plan, title="INV — UPGRADE PLAN")
+
+        if dry_run:
+            console.print("[dim]Dry run requested — skipping execution.[/dim]")
+            return
+
+        try:
+            approved = request_operation_approval(plan)
+            if not approved:
+                console.print("[yellow]Upgrade cancelled by user.[/yellow]")
+                repo.update_lifecycle_operation_status(plan.id, OperationState.CANCELLED)
+                return
+
+            plan.status = OperationState.APPROVED
+            result = executor.execute(plan, dry_run=False)
+            if result.status == OperationState.COMPLETED:
+                console.print(f"[bold green]✓ Successfully upgraded {package}.[/bold green]")
+            else:
+                console.print(
+                    f"[bold red]✗ Upgrade failed for {package}. Check operation log {plan.id}.[/bold red]"
+                )
+                raise typer.Exit(code=1)
+        except ModificationRefusedError as m_exc:
+            console.print(f"[bold red]Refusal Policy:[/bold red] {m_exc}")
+            raise typer.Exit(code=1) from m_exc
+
+
+@app.command(name="audit")
+def audit_cmd(
+    severity: Annotated[
+        str | None,
+        typer.Option("--severity", help="Filter by severity (critical, high, medium, low)."),
+    ] = None,
+    manager: Annotated[
+        str | None, typer.Option("--manager", "-m", help="Filter by manager or ecosystem.")
+    ] = None,
+    fix: Annotated[
+        bool, typer.Option("--fix", help="Generate remediation plan for fixable vulnerabilities.")
+    ] = False,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Preview fixes without modifying system.")
+    ] = False,
+    report: Annotated[
+        bool, typer.Option("--report", help="Output audit report as structured JSON.")
+    ] = False,
+) -> None:
+    """Audit installed software and project dependencies for known security vulnerabilities."""
+    engine = InventoryEngine()
+    sev_filter = None
+    if severity:
+        try:
+            sev_filter = VulnerabilitySeverity(severity.lower())
+        except ValueError:
+            console.print(f"[bold red]Invalid severity filter:[/bold red] {severity}")
+            raise typer.Exit(code=1) from None
+
+    with engine.get_repository() as repo:
+        sec_engine = SecurityEngine(repo)
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            transient=True,
+        ) as progress:
+            progress.add_task("Auditing packages against OSV advisory database...", total=None)
+            audit_report = sec_engine.run_audit(
+                severity_filter=sev_filter,
+                manager_filter=manager,
+            )
+
+        if report:
+            console.print(export_security_report_json(audit_report))
+            return
+
+        render_security_audit_table(audit_report)
+
+        if fix and audit_report.findings:
+            fixable = [f for f in audit_report.findings if f.fix_available]
+            if not fixable:
+                console.print(
+                    "[yellow]No automated remediation fixes are available for the discovered findings.[/yellow]"
+                )
+                return
+
+            console.print(
+                f"\n[bold cyan]Remediation Planning — {len(fixable)} fixable finding(s):[/bold cyan]\n"
+            )
+            remediation_engine = RemediationEngine(repo)
+            for vuln in fixable:
+                op = remediation_engine.plan_remediation(vuln)
+                if not op:
+                    continue
+                render_operation_plan_panel(op, title=f"REMEDIATION PLAN: {vuln.package_name}")
+                if dry_run:
+                    console.print("[dim]Dry run requested — skipping remediation.[/dim]")
+                    continue
+
+                try:
+                    remediated = remediation_engine.apply_remediation(
+                        op, vuln, dry_run=False, prompt_user=True
+                    )
+                    if remediated:
+                        console.print(
+                            f"[bold green]✓ Successfully remediated {vuln.package_name} ({vuln.advisory_id}).[/bold green]"
+                        )
+                    else:
+                        console.print(
+                            f"[bold red]✗ Failed to remediate {vuln.package_name}.[/bold red]"
+                        )
+                except ModificationRefusedError as m_exc:
+                    console.print(f"[bold red]Refusal Policy:[/bold red] {m_exc}")
+                    raise typer.Exit(code=1) from m_exc
+
+
+# ==============================================================================
+# SUBCOMMAND GROUPS: PLAN & OPERATIONS
+# ==============================================================================
+
+plan_app = typer.Typer(
+    name="plan",
+    help="Preview and generate modification plans without executing (strictly read-only).",
+)
+app.add_typer(plan_app, name="plan")
+
+
+@plan_app.command(name="install")
+def plan_install_cmd(
+    package_spec: Annotated[
+        str,
+        typer.Argument(help="Package specification (e.g. 'ripgrep' or 'ruff@0.3.4')."),
+    ],
+    manager: Annotated[
+        str | None, typer.Option("--manager", "-m", help="Target package manager.")
+    ] = None,
+) -> None:
+    """Generate and display an installation plan (strictly read-only)."""
+    pkg_name = package_spec
+    ver_spec = None
+    if "@" in package_spec and not package_spec.startswith("@"):
+        pkg_name, ver_spec = package_spec.split("@", 1)
+
+    engine = InventoryEngine()
+    with engine.get_repository() as repo:
+        planner = LifecyclePlanner(repo)
+        try:
+            plan = planner.plan_install(package=pkg_name, version=ver_spec, manager=manager)
+            render_operation_plan_panel(plan, title="INV PLAN — INSTALLATION")
+        except Exception as exc:
+            console.print(f"[bold red]Planning Error:[/bold red] {exc}")
+            raise typer.Exit(code=1) from exc
+
+
+@plan_app.command(name="remove")
+def plan_remove_cmd(
+    package: Annotated[str, typer.Argument(help="Package name.")],
+    manager: Annotated[
+        str | None, typer.Option("--manager", "-m", help="Target package manager.")
+    ] = None,
+) -> None:
+    """Generate and display a removal plan with dependency impact (strictly read-only)."""
+    engine = InventoryEngine()
+    with engine.get_repository() as repo:
+        planner = LifecyclePlanner(repo)
+        try:
+            plan = planner.plan_remove(package=package, manager=manager)
+            render_operation_plan_panel(plan, title="INV PLAN — REMOVAL")
+        except Exception as exc:
+            console.print(f"[bold red]Planning Error:[/bold red] {exc}")
+            raise typer.Exit(code=1) from exc
+
+
+@plan_app.command(name="upgrade")
+def plan_upgrade_cmd(
+    package: Annotated[str, typer.Argument(help="Package name.")],
+    strategy: Annotated[
+        str,
+        typer.Option("--strategy", "-s", help="Upgrade strategy: 'compatible' or 'latest'."),
+    ] = "compatible",
+    manager: Annotated[
+        str | None, typer.Option("--manager", "-m", help="Target package manager.")
+    ] = None,
+) -> None:
+    """Generate and display an upgrade plan with version analysis (strictly read-only)."""
+    engine = InventoryEngine()
+    strat_enum = (
+        UpdateStrategy.LATEST if strategy.lower() == "latest" else UpdateStrategy.COMPATIBLE
+    )
+    with engine.get_repository() as repo:
+        planner = LifecyclePlanner(repo)
+        try:
+            plan = planner.plan_upgrade(package=package, strategy=strat_enum, manager=manager)
+            render_operation_plan_panel(plan, title="INV PLAN — UPGRADE")
+        except Exception as exc:
+            console.print(f"[bold red]Planning Error:[/bold red] {exc}")
+            raise typer.Exit(code=1) from exc
+
+
+@plan_app.command(name="audit-fix")
+def plan_audit_fix_cmd(
+    manager: Annotated[
+        str | None, typer.Option("--manager", "-m", help="Filter by manager or ecosystem.")
+    ] = None,
+) -> None:
+    """Generate and display remediation plans for discovered vulnerabilities (strictly read-only)."""
+    engine = InventoryEngine()
+    with engine.get_repository() as repo:
+        sec_engine = SecurityEngine(repo)
+        report = sec_engine.run_audit(manager_filter=manager)
+        fixable = [f for f in report.findings if f.fix_available]
+        if not fixable:
+            console.print("[bold green]✓ No fixable vulnerabilities to plan.[/bold green]")
+            return
+
+        remediation_engine = RemediationEngine(repo)
+        for vuln in fixable:
+            op = remediation_engine.plan_remediation(vuln)
+            if op:
+                render_operation_plan_panel(op, title=f"INV PLAN — AUDIT FIX: {vuln.package_name}")
+
+
+operations_app = typer.Typer(
+    name="operations",
+    help="Inspect past modification operations and audit trails.",
+)
+app.add_typer(operations_app, name="operations")
+
+
+@operations_app.callback(invoke_without_command=True)
+def operations_default(
+    ctx: typer.Context,
+    limit: Annotated[
+        int, typer.Option("--limit", "-n", help="Maximum operations to display.")
+    ] = 30,
+) -> None:
+    """Display past lifecycle modification operations."""
+    if ctx.invoked_subcommand is None:
+        engine = InventoryEngine()
+        with engine.get_repository() as repo:
+            ops = repo.list_lifecycle_operations(limit=limit)
+            render_operations_table(ops)
+
+
+@operations_app.command(name="info")
+def operations_info_cmd(
+    operation_id: Annotated[str, typer.Argument(help="Operation ID to inspect.")],
+) -> None:
+    """Display detailed audit trail and execution logs for an operation."""
+    engine = InventoryEngine()
+    with engine.get_repository() as repo:
+        op = repo.get_lifecycle_operation(operation_id)
+        if not op:
+            console.print(f"[bold red]Error:[/bold red] Operation '{operation_id}' not found.")
+            raise typer.Exit(code=1)
+
+        render_operation_plan_panel(op, title=f"OPERATION DETAILS — {op.id}")
+        events = repo.list_operation_events(op.id)
+        if events:
+            console.print(f"\n[bold]Event History ({len(events)} events):[/bold]")
+            for ev in events:
+                console.print(
+                    f"  • [dim]{ev.timestamp[:19].replace('T', ' ')}[/dim] "
+                    f"[cyan]{ev.event_type}[/cyan]: {ev.message}"
+                )
+
+        if op.logs:
+            console.print(f"\n[bold]Subprocess Logs ({len(op.logs)} entries):[/bold]")
+            for log_entry in op.logs:
+                console.print(f"  [dim]{log_entry}[/dim]")
+
+
+@operations_app.command(name="verify")
+def operations_verify_cmd(
+    operation_id: Annotated[str, typer.Argument(help="Operation ID to re-verify.")],
+) -> None:
+    """Verify current system state against the recorded operation."""
+    engine = InventoryEngine()
+    lifecycle_reg = LifecycleRegistry()
+
+    with engine.get_repository() as repo:
+        op = repo.get_lifecycle_operation(operation_id)
+        if not op:
+            console.print(f"[bold red]Error:[/bold red] Operation '{operation_id}' not found.")
+            raise typer.Exit(code=1)
+
+        adapter = lifecycle_reg.get(op.manager)
+        if not adapter:
+            console.print(f"[bold red]Error:[/bold red] Adapter for '{op.manager}' is unavailable.")
+            raise typer.Exit(code=1)
+
+        from inv.lifecycle.verification import verify_operation_outcome
+
+        is_valid = verify_operation_outcome(op, adapter)
+        if is_valid:
+            console.print(
+                f"[bold green]✓ Verification passed:[/bold green] System state matches operation {op.id} ({op.target_package})."
+            )
+        else:
+            console.print(
+                f"[bold red]✗ Verification failed:[/bold red] System state does not match operation {op.id} ({op.target_package})."
+            )
+            raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

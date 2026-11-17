@@ -71,6 +71,71 @@ class PackageManagerType(StrEnum):
     GO = "go"
 
 
+class LifecycleCapability(StrEnum):
+    """Capabilities supported by package manager lifecycle adapters."""
+
+    INSTALL = "install"
+    REMOVE = "remove"
+    UPGRADE = "upgrade"
+    LIST_VERSIONS = "list_versions"
+    CHECK_OUTDATED = "check_outdated"
+    RESOLVE_DEPENDENCIES = "resolve_dependencies"
+    VERIFY_INSTALLATION = "verify_installation"
+    ROLLBACK = "rollback"
+    AUDIT = "audit"
+
+
+class OperationType(StrEnum):
+    """Types of package lifecycle modification operations."""
+
+    INSTALL = "install"
+    REMOVE = "remove"
+    UPGRADE = "upgrade"
+    BATCH_UPGRADE = "batch_upgrade"
+    AUDIT_FIX = "audit_fix"
+
+
+class OperationState(StrEnum):
+    """Execution lifecycle state for modification operations."""
+
+    PLANNED = "planned"
+    AWAITING_APPROVAL = "awaiting_approval"
+    APPROVED = "approved"
+    EXECUTING = "executing"
+    COMPLETED = "completed"
+    PARTIALLY_COMPLETED = "partially_completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    VERIFICATION_FAILED = "verification_failed"
+
+
+class RiskLevel(StrEnum):
+    """Assessed risk level for package modification operations."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class UpdateStrategy(StrEnum):
+    """Package upgrade strategy."""
+
+    COMPATIBLE = "compatible"
+    LATEST = "latest"
+    SECURITY = "security"
+
+
+class VulnerabilitySeverity(StrEnum):
+    """Standardized advisory severity classification."""
+
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    UNKNOWN = "unknown"
+
+
 # Default application metadata
 APP_NAME = "inv"
 APP_DISPLAY_NAME = "Inventory CLI"

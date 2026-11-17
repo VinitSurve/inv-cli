@@ -5,7 +5,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.tree import Tree
 
-from inv.constants import APP_DISPLAY_NAME, ScannerStatus
+from inv.constants import APP_DISPLAY_NAME, RiskLevel, ScannerStatus
 from inv.core.coverage import InventoryCoverage
 from inv.core.models import (
     Application,
@@ -18,6 +18,11 @@ from inv.core.models import (
     Runtime,
     ScannerObservation,
     ScanSession,
+)
+from inv.lifecycle.models import (
+    LifecycleOperation,
+    OutdatedPackage,
+    PackageInfo,
 )
 
 console = Console()
@@ -319,3 +324,170 @@ def render_project_tree(projects: list[Project], dependencies: list[ProjectDepen
             )
 
     console.print(tree)
+
+
+def render_operation_plan_panel(
+    op: LifecycleOperation, title: str = "INV — OPERATION PLAN"
+) -> None:
+    """Render a detailed modification plan preview panel."""
+    risk_color = "green"
+    if op.risk_level == RiskLevel.CRITICAL:
+        risk_color = "bold red"
+    elif op.risk_level == RiskLevel.HIGH:
+        risk_color = "red"
+    elif op.risk_level == RiskLevel.MEDIUM:
+        risk_color = "yellow"
+
+    prev_str = op.previous_version or "[dim]Not installed[/dim]"
+    prop_str = op.proposed_version or "[dim]None[/dim]"
+    rollback_str = (
+        "[green]Guaranteed restoration supported[/green]"
+        if op.rollback_available
+        else "[yellow]Previous version restoration not guaranteed[/yellow]"
+    )
+
+    lines = [
+        f"[bold white]Target Package:[/bold white] [bold cyan]{op.target_package}[/bold cyan]",
+        f"[bold white]Package Manager:[/bold white] {op.manager}",
+        f"[bold white]Current Version:[/bold white] {prev_str}",
+        f"[bold white]Proposed Version:[/bold white] [bold green]{prop_str}[/bold green]",
+        f"[bold white]Operation Type:[/bold white] {op.operation_type.value.upper()}",
+        f"[bold white]Assessed Risk:[/bold white] [{risk_color}]{op.risk_level.value.upper()}[/{risk_color}]",
+    ]
+
+    if op.risk_reasons:
+        lines.append("\n[bold]Risk Factors:[/bold]")
+        for r in op.risk_reasons:
+            lines.append(f"  • [{risk_color}]{r}[/{risk_color}]")
+
+    if op.actions:
+        lines.append("\n[bold]Proposed Actions:[/bold]")
+        for a in op.actions:
+            lines.append(f"  • {a}")
+
+    if op.reverse_dependencies:
+        lines.append(
+            f"\n[bold red]Reverse Dependencies Affected ({len(op.reverse_dependencies)}):[/bold red]"
+        )
+        for rev in op.reverse_dependencies[:8]:
+            lines.append(f"  • [yellow]{rev}[/yellow]")
+        if len(op.reverse_dependencies) > 8:
+            lines.append(f"  • [dim]...and {len(op.reverse_dependencies) - 8} more[/dim]")
+
+    lines.append(f"\n[bold white]Rollback Status:[/bold white] {rollback_str}")
+    if op.rollback_instructions:
+        lines.append(f"[dim]Guidance: {op.rollback_instructions}[/dim]")
+
+    lines.append("\n[bold yellow]No changes have been made yet.[/bold yellow]")
+
+    console.print(
+        Panel(
+            "\n".join(lines),
+            title=f"[bold cyan]{title}[/bold cyan]",
+            border_style="cyan" if op.risk_level == RiskLevel.LOW else risk_color,
+        )
+    )
+
+
+def render_outdated_table(outdated: list[OutdatedPackage]) -> None:
+    """Render a table of packages with available updates."""
+    if not outdated:
+        console.print("[bold green]✓ All installed packages are currently up-to-date.[/bold green]")
+        return
+
+    table = Table(title=f"Outdated Packages ({len(outdated)} update(s) available)", pad_edge=False)
+    table.add_column("Package", style="bold white", min_width=18)
+    table.add_column("Manager", style="cyan", min_width=14)
+    table.add_column("Installed", min_width=10)
+    table.add_column("Latest Compatible", style="green", min_width=14)
+    table.add_column("Latest Stable", style="bold green", min_width=14)
+    table.add_column("Type", min_width=10)
+
+    for p in outdated:
+        type_str = "[bold red]MAJOR[/bold red]" if p.is_major_update else "[dim]minor/patch[/dim]"
+        table.add_row(
+            p.name,
+            p.manager,
+            p.installed_version,
+            p.latest_compatible_version,
+            p.latest_stable_version,
+            type_str,
+        )
+
+    console.print(table)
+
+
+def render_operations_table(operations: list[LifecycleOperation]) -> None:
+    """Render a table summarizing past lifecycle modification operations."""
+    if not operations:
+        console.print("[dim]No past modification operations recorded in history.[/dim]")
+        return
+
+    table = Table(title="Lifecycle Operations History", pad_edge=False)
+    table.add_column("Operation ID", style="bold white", min_width=16)
+    table.add_column("Type", min_width=12)
+    table.add_column("Target Package", style="cyan", min_width=16)
+    table.add_column("Manager", min_width=14)
+    table.add_column("Previous", min_width=10)
+    table.add_column("Proposed", style="green", min_width=10)
+    table.add_column("Status", min_width=14)
+    table.add_column("Timestamp", style="dim", min_width=20)
+
+    for op in operations:
+        status_color = "green" if op.status.value == "completed" else "red"
+        if op.status.value in ("planned", "awaiting_approval"):
+            status_color = "yellow"
+        elif op.status.value == "executing":
+            status_color = "cyan"
+
+        prev_str = op.previous_version or "-"
+        prop_str = op.proposed_version or "-"
+        table.add_row(
+            op.id,
+            op.operation_type.value.upper(),
+            op.target_package,
+            op.manager,
+            prev_str,
+            prop_str,
+            f"[{status_color}]{op.status.value}[/{status_color}]",
+            op.created_at[:19].replace("T", " "),
+        )
+
+    console.print(table)
+
+
+def render_package_info(info: PackageInfo) -> None:
+    """Render detailed information for a specific package."""
+    inst_str = info.installed_version or "[dim]Not installed[/dim]"
+    latest_str = info.latest_version or "[dim]Unknown[/dim]"
+    lines = [
+        f"[bold white]Package Name:[/bold white] [bold cyan]{info.name}[/bold cyan]",
+        f"[bold white]Manager:[/bold white] {info.manager}",
+        f"[bold white]Installed Version:[/bold white] {inst_str}",
+        f"[bold white]Latest Version:[/bold white] [bold green]{latest_str}[/bold green]",
+        f"[bold white]Scope:[/bold white] {info.scope}",
+    ]
+    if info.description:
+        lines.append(f"[bold white]Description:[/bold white] {info.description}")
+    if info.homepage:
+        lines.append(f"[bold white]Homepage:[/bold white] {info.homepage}")
+    if info.license:
+        lines.append(f"[bold white]License:[/bold white] {info.license}")
+    if info.install_path:
+        lines.append(f"[bold white]Location:[/bold white] {info.install_path}")
+    if info.dependencies:
+        lines.append(
+            f"[bold white]Direct Dependencies ({len(info.dependencies)}):[/bold white] {', '.join(info.dependencies[:10])}"
+        )
+    if info.reverse_dependencies:
+        lines.append(
+            f"[bold white]Required By ({len(info.reverse_dependencies)}):[/bold white] [yellow]{', '.join(info.reverse_dependencies[:10])}[/yellow]"
+        )
+
+    console.print(
+        Panel(
+            "\n".join(lines),
+            title=f"[bold cyan]Package Information — {info.name}[/bold cyan]",
+            border_style="cyan",
+        )
+    )

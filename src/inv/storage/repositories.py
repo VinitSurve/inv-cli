@@ -6,7 +6,17 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from inv.constants import DependencyStatus, EnvironmentType, InstallScope, ScannerStatus
+from inv.constants import (
+    DependencyStatus,
+    EnvironmentType,
+    InstallScope,
+    OperationState,
+    OperationType,
+    RiskLevel,
+    ScannerStatus,
+    UpdateStrategy,
+    VulnerabilitySeverity,
+)
 from inv.core.models import (
     Application,
     Container,
@@ -21,6 +31,14 @@ from inv.core.models import (
     ScannerObservation,
     ScanSession,
     SoftwareIdentity,
+)
+from inv.lifecycle.models import (
+    LifecycleOperation,
+    OperationEvent,
+    OutdatedPackage,
+)
+from inv.security.models import (
+    VulnerabilityRecord,
 )
 
 
@@ -732,3 +750,384 @@ class InventoryRepository:
             )
 
         return results
+
+    # ---------------------------------------------------------
+    # Vulnerabilities
+    # ---------------------------------------------------------
+    def save_vulnerability(self, vuln: VulnerabilityRecord) -> None:
+        """Insert or replace a discovered vulnerability record."""
+        self.conn.execute(
+            """
+            INSERT OR REPLACE INTO vulnerabilities (
+                id, advisory_id, package_name, ecosystem, installed_version,
+                severity, title, affected_range, fixed_version, cve_id,
+                ghsa_id, osv_id, cvss_score, advisory_url, details,
+                dependency_type, introduced_by, data_source, fix_available,
+                remediation_status, published_at, scanned_at, session_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                vuln.id,
+                vuln.advisory_id,
+                vuln.package_name,
+                vuln.ecosystem,
+                vuln.installed_version,
+                vuln.severity.value,
+                vuln.title,
+                vuln.affected_range,
+                vuln.fixed_version,
+                vuln.cve_id,
+                vuln.ghsa_id,
+                vuln.osv_id,
+                vuln.cvss_score,
+                vuln.advisory_url,
+                vuln.details,
+                vuln.dependency_type,
+                vuln.introduced_by,
+                vuln.data_source,
+                1 if vuln.fix_available else 0,
+                vuln.remediation_status,
+                vuln.published_at,
+                vuln.scanned_at,
+                vuln.session_id,
+            ),
+        )
+
+    def list_vulnerabilities(
+        self,
+        session_id: str | None = None,
+        severity: str | None = None,
+        ecosystem: str | None = None,
+    ) -> list[VulnerabilityRecord]:
+        """Query stored vulnerabilities with optional filters."""
+        query = "SELECT * FROM vulnerabilities WHERE 1=1"
+        params: list[Any] = []
+        if session_id:
+            query += " AND session_id = ?"
+            params.append(session_id)
+        if severity:
+            query += " AND severity = ?"
+            params.append(severity.lower())
+        if ecosystem:
+            query += " AND ecosystem = ?"
+            params.append(ecosystem.lower())
+
+        query += " ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END;"
+        rows = self.conn.execute(query, params).fetchall()
+        result = []
+        for r in rows:
+            result.append(
+                VulnerabilityRecord(
+                    id=r["id"],
+                    advisory_id=r["advisory_id"],
+                    package_name=r["package_name"],
+                    ecosystem=r["ecosystem"],
+                    installed_version=r["installed_version"],
+                    severity=VulnerabilitySeverity(r["severity"]),
+                    title=r["title"],
+                    affected_range=r["affected_range"],
+                    fixed_version=r["fixed_version"],
+                    cve_id=r["cve_id"],
+                    ghsa_id=r["ghsa_id"],
+                    osv_id=r["osv_id"],
+                    cvss_score=r["cvss_score"],
+                    advisory_url=r["advisory_url"],
+                    details=r["details"],
+                    dependency_type=r["dependency_type"] or "direct",
+                    introduced_by=r["introduced_by"],
+                    data_source=r["data_source"] or "osv",
+                    fix_available=bool(r["fix_available"]),
+                    remediation_status=r["remediation_status"] or "open",
+                    published_at=r["published_at"],
+                    scanned_at=r["scanned_at"],
+                    session_id=r["session_id"],
+                )
+            )
+        return result
+
+    def get_vulnerability(self, vuln_id: str) -> VulnerabilityRecord | None:
+        """Fetch a single vulnerability by ID or advisory ID."""
+        row = self.conn.execute(
+            "SELECT * FROM vulnerabilities WHERE id = ? OR advisory_id = ? LIMIT 1;",
+            (vuln_id, vuln_id),
+        ).fetchone()
+        if not row:
+            return None
+        return VulnerabilityRecord(
+            id=row["id"],
+            advisory_id=row["advisory_id"],
+            package_name=row["package_name"],
+            ecosystem=row["ecosystem"],
+            installed_version=row["installed_version"],
+            severity=VulnerabilitySeverity(row["severity"]),
+            title=row["title"],
+            affected_range=row["affected_range"],
+            fixed_version=row["fixed_version"],
+            cve_id=row["cve_id"],
+            ghsa_id=row["ghsa_id"],
+            osv_id=row["osv_id"],
+            cvss_score=row["cvss_score"],
+            advisory_url=row["advisory_url"],
+            details=row["details"],
+            dependency_type=row["dependency_type"] or "direct",
+            introduced_by=row["introduced_by"],
+            data_source=row["data_source"] or "osv",
+            fix_available=bool(row["fix_available"]),
+            remediation_status=row["remediation_status"] or "open",
+            published_at=row["published_at"],
+            scanned_at=row["scanned_at"],
+            session_id=row["session_id"],
+        )
+
+    def update_vulnerability_remediation(self, vuln_id: str, status: str) -> None:
+        """Update remediation status of a vulnerability record."""
+        self.conn.execute(
+            "UPDATE vulnerabilities SET remediation_status = ? WHERE id = ? OR advisory_id = ?;",
+            (status, vuln_id, vuln_id),
+        )
+
+    # ---------------------------------------------------------
+    # Lifecycle Operations & Events
+    # ---------------------------------------------------------
+    def save_lifecycle_operation(self, op: LifecycleOperation) -> None:
+        """Insert or replace a lifecycle operation record."""
+        self.conn.execute(
+            """
+            INSERT OR REPLACE INTO lifecycle_operations (
+                id, operation_type, target_package, manager, scope,
+                target_version, previous_version, proposed_version,
+                status, risk_level, risk_reasons_json, actions_json,
+                dependency_changes_json, reverse_dependencies_json,
+                rollback_available, rollback_instructions, created_at,
+                approved_at, executed_at, verified_at, logs_json, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                op.id,
+                op.operation_type.value,
+                op.target_package,
+                op.manager,
+                op.scope.value,
+                op.target_version,
+                op.previous_version,
+                op.proposed_version,
+                op.status.value,
+                op.risk_level.value,
+                json.dumps(op.risk_reasons),
+                json.dumps(op.actions),
+                json.dumps(op.dependency_changes),
+                json.dumps(op.reverse_dependencies),
+                1 if op.rollback_available else 0,
+                op.rollback_instructions,
+                op.created_at,
+                op.approved_at,
+                op.executed_at,
+                op.verified_at,
+                json.dumps(op.logs),
+                json.dumps(op.metadata),
+            ),
+        )
+
+    def get_lifecycle_operation(self, op_id: str) -> LifecycleOperation | None:
+        """Retrieve a lifecycle operation by ID."""
+        row = self.conn.execute(
+            "SELECT * FROM lifecycle_operations WHERE id = ?;", (op_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return LifecycleOperation(
+            id=row["id"],
+            operation_type=OperationType(row["operation_type"]),
+            target_package=row["target_package"],
+            manager=row["manager"],
+            scope=InstallScope(row["scope"]),
+            target_version=row["target_version"],
+            previous_version=row["previous_version"],
+            proposed_version=row["proposed_version"],
+            status=OperationState(row["status"]),
+            risk_level=RiskLevel(row["risk_level"]),
+            risk_reasons=json.loads(row["risk_reasons_json"] or "[]"),
+            actions=json.loads(row["actions_json"] or "[]"),
+            dependency_changes=json.loads(row["dependency_changes_json"] or "[]"),
+            reverse_dependencies=json.loads(row["reverse_dependencies_json"] or "[]"),
+            rollback_available=bool(row["rollback_available"]),
+            rollback_instructions=row["rollback_instructions"],
+            created_at=row["created_at"],
+            approved_at=row["approved_at"],
+            executed_at=row["executed_at"],
+            verified_at=row["verified_at"],
+            logs=json.loads(row["logs_json"] or "[]"),
+            metadata=json.loads(row["metadata_json"] or "{}"),
+        )
+
+    def list_lifecycle_operations(
+        self, status: str | None = None, limit: int = 50
+    ) -> list[LifecycleOperation]:
+        """List lifecycle operations sorted by creation timestamp descending."""
+        query = "SELECT * FROM lifecycle_operations"
+        params: list[Any] = []
+        if status:
+            query += " WHERE status = ?"
+            params.append(status.lower())
+        query += " ORDER BY created_at DESC LIMIT ?;"
+        params.append(limit)
+
+        rows = self.conn.execute(query, params).fetchall()
+        result = []
+        for row in rows:
+            result.append(
+                LifecycleOperation(
+                    id=row["id"],
+                    operation_type=OperationType(row["operation_type"]),
+                    target_package=row["target_package"],
+                    manager=row["manager"],
+                    scope=InstallScope(row["scope"]),
+                    target_version=row["target_version"],
+                    previous_version=row["previous_version"],
+                    proposed_version=row["proposed_version"],
+                    status=OperationState(row["status"]),
+                    risk_level=RiskLevel(row["risk_level"]),
+                    risk_reasons=json.loads(row["risk_reasons_json"] or "[]"),
+                    actions=json.loads(row["actions_json"] or "[]"),
+                    dependency_changes=json.loads(row["dependency_changes_json"] or "[]"),
+                    reverse_dependencies=json.loads(row["reverse_dependencies_json"] or "[]"),
+                    rollback_available=bool(row["rollback_available"]),
+                    rollback_instructions=row["rollback_instructions"],
+                    created_at=row["created_at"],
+                    approved_at=row["approved_at"],
+                    executed_at=row["executed_at"],
+                    verified_at=row["verified_at"],
+                    logs=json.loads(row["logs_json"] or "[]"),
+                    metadata=json.loads(row["metadata_json"] or "{}"),
+                )
+            )
+        return result
+
+    def update_lifecycle_operation_status(
+        self,
+        op_id: str,
+        status: OperationState,
+        logs: list[str] | None = None,
+        verified_at: str | None = None,
+    ) -> None:
+        """Update operation status, optional logs, and verification timestamp."""
+        if logs is not None and verified_at is not None:
+            self.conn.execute(
+                "UPDATE lifecycle_operations SET status = ?, logs_json = ?, verified_at = ? WHERE id = ?;",
+                (status.value, json.dumps(logs), verified_at, op_id),
+            )
+        elif logs is not None:
+            self.conn.execute(
+                "UPDATE lifecycle_operations SET status = ?, logs_json = ? WHERE id = ?;",
+                (status.value, json.dumps(logs), op_id),
+            )
+        else:
+            self.conn.execute(
+                "UPDATE lifecycle_operations SET status = ? WHERE id = ?;",
+                (status.value, op_id),
+            )
+
+    def save_operation_event(self, event: OperationEvent) -> None:
+        """Insert an operation audit trail event."""
+        self.conn.execute(
+            """
+            INSERT INTO operation_events (id, operation_id, event_type, timestamp, message, data_json)
+            VALUES (?, ?, ?, ?, ?, ?);
+            """,
+            (
+                event.id,
+                event.operation_id,
+                event.event_type,
+                event.timestamp,
+                event.message,
+                json.dumps(event.data),
+            ),
+        )
+
+    def list_operation_events(self, operation_id: str) -> list[OperationEvent]:
+        """Fetch all events for a specific operation."""
+        rows = self.conn.execute(
+            "SELECT * FROM operation_events WHERE operation_id = ? ORDER BY timestamp ASC;",
+            (operation_id,),
+        ).fetchall()
+        result = []
+        for r in rows:
+            result.append(
+                OperationEvent(
+                    id=r["id"],
+                    operation_id=r["operation_id"],
+                    event_type=r["event_type"],
+                    timestamp=r["timestamp"],
+                    message=r["message"],
+                    data=json.loads(r["data_json"] or "{}"),
+                )
+            )
+        return result
+
+    # ---------------------------------------------------------
+    # Outdated Packages
+    # ---------------------------------------------------------
+    def save_outdated_package(self, pkg: OutdatedPackage, session_id: str | None = None) -> None:
+        """Insert or replace an outdated package observation."""
+        outdated_id = f"out_{pkg.manager}_{pkg.name}"
+        self.conn.execute(
+            """
+            INSERT OR REPLACE INTO outdated_packages (
+                id, name, manager, installed_version, latest_version,
+                latest_stable_version, latest_compatible_version,
+                update_strategy, is_major_update, checked_at, session_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                outdated_id,
+                pkg.name,
+                pkg.manager,
+                pkg.installed_version,
+                pkg.latest_version,
+                pkg.latest_stable_version,
+                pkg.latest_compatible_version,
+                pkg.update_strategy.value,
+                1 if pkg.is_major_update else 0,
+                pkg.checked_at,
+                session_id,
+            ),
+        )
+
+    def list_outdated_packages(
+        self, manager: str | None = None, session_id: str | None = None
+    ) -> list[OutdatedPackage]:
+        """List tracked outdated packages."""
+        query = "SELECT * FROM outdated_packages WHERE 1=1"
+        params: list[Any] = []
+        if manager:
+            query += " AND manager = ?"
+            params.append(manager.lower())
+        if session_id:
+            query += " AND session_id = ?"
+            params.append(session_id)
+        query += " ORDER BY name ASC;"
+
+        rows = self.conn.execute(query, params).fetchall()
+        result = []
+        for r in rows:
+            result.append(
+                OutdatedPackage(
+                    name=r["name"],
+                    manager=r["manager"],
+                    installed_version=r["installed_version"],
+                    latest_version=r["latest_version"],
+                    latest_stable_version=r["latest_stable_version"],
+                    latest_compatible_version=r["latest_compatible_version"],
+                    update_strategy=UpdateStrategy(r["update_strategy"]),
+                    is_major_update=bool(r["is_major_update"]),
+                    checked_at=r["checked_at"],
+                )
+            )
+        return result
+
+    def clear_outdated_packages(self, session_id: str | None = None) -> None:
+        """Clear outdated package records."""
+        if session_id:
+            self.conn.execute("DELETE FROM outdated_packages WHERE session_id = ?;", (session_id,))
+        else:
+            self.conn.execute("DELETE FROM outdated_packages;")
