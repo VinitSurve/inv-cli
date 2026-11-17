@@ -41,8 +41,8 @@ Thank you for your interest in contributing to **Inventory CLI (`inv`)**! We wel
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/VinitSurve/inv.git
-cd inv
+git clone https://github.com/VinitSurve/inv-cli.git
+cd inv-cli
 
 # 2. Create virtual environment with Python 3.11+
 uv venv --python 3.11

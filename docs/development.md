@@ -1,11 +1,11 @@
-# Development & Contributor Guide — Inventory CLI (`inv`)
+# Development & Contributor Guide — Inventory CLI (`inv-cli`)
 
 ## 1. Quick Development Setup
 
 ```bash
 # Clone the repository
-git clone https://github.com/VinitSurve/inv.git
-cd inv
+git clone https://github.com/VinitSurve/inv-cli.git
+cd inv-cli
 
 # Initialize virtual environment with Python 3.11+
 uv venv --python 3.11

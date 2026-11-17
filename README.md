@@ -1,10 +1,15 @@
-# Inventory CLI (`inv`)
+# Inventory CLI (`inv-cli`)
 
-[![CI](https://github.com/VinitSurve/inv/actions/workflows/ci.yml/badge.svg)](https://github.com/VinitSurve/inv/actions)
+[![CI](https://github.com/VinitSurve/inv-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/VinitSurve/inv-cli/actions)
+[![PyPI](https://img.shields.io/pypi/v/inv-cli.svg)](https://pypi.org/project/inv-cli/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A comprehensive, local-first macOS software inventory, controlled package lifecycle management, and security audit CLI.
+
+| PyPI Distribution | CLI Command | Python Import | GitHub Repository |
+| :--- | :--- | :--- | :--- |
+| **`inv-cli`** | **`inv`** | **`import inv`** | [**`VinitSurve/inv-cli`**](https://github.com/VinitSurve/inv-cli) |
 
 `inv` discovers installed packages across 13+ package managers, applications, PATH binaries, duplicate command shadowing, programming language runtimes, virtual environments, container runtimes, project manifests, and lockfile dependencies. It also provides unified package lifecycle operations (`outdated`, `install`, `remove`, `upgrade`), reverse dependency impact analysis, vulnerability detection (OSV.dev + native tools), and conservative vulnerability remediation under a strict **Controlled Execution Model**.
 
@@ -56,20 +61,26 @@ Managing and understanding this sprawling landscape presents serious challenges:
 ### Using `uv` (Recommended)
 
 ```bash
-uv tool install inv
+uv tool install inv-cli
 ```
 
 ### Using `pipx`
 
 ```bash
-pipx install inv
+pipx install inv-cli
+```
+
+### Using standard `pip`
+
+```bash
+python -m pip install inv-cli
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/VinitSurve/inv.git
-cd inv
+git clone https://github.com/VinitSurve/inv-cli.git
+cd inv-cli
 uv venv --python 3.11
 source .venv/bin/activate
 uv pip install -e ".[dev]"

@@ -3,7 +3,7 @@ requires = ["hatchling>=1.21"]
 build-backend = "hatchling.build"
 
 [project]
-name = "inv"
+name = "inv-cli"
 version = "1.1.0"
 description = "A comprehensive macOS software inventory, controlled package lifecycle management, and security audit CLI."
 readme = "README.md"
@@ -61,11 +61,11 @@ dev = [
 inv = "inv.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/VinitSurve/inv"
-Repository = "https://github.com/VinitSurve/inv"
-Issues = "https://github.com/VinitSurve/inv/issues"
-Documentation = "https://github.com/VinitSurve/inv#readme"
-Changelog = "https://github.com/VinitSurve/inv/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/VinitSurve/inv-cli"
+Repository = "https://github.com/VinitSurve/inv-cli"
+Issues = "https://github.com/VinitSurve/inv-cli/issues"
+Documentation = "https://github.com/VinitSurve/inv-cli#readme"
+Changelog = "https://github.com/VinitSurve/inv-cli/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/inv"]
