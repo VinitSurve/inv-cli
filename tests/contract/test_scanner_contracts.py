@@ -104,7 +104,10 @@ def test_contract_subprocess_timeout() -> None:
     scanner = BrewFormulaScanner()
     ctx = ScanContext(session_id="test-session", config=InvConfig())
 
-    with patch("inv.scanners.package_managers.brew.run_command") as mock_run:
+    with (
+        patch.object(scanner, "is_available", return_value=True),
+        patch("inv.scanners.package_managers.brew.run_command") as mock_run,
+    ):
         mock_run.return_value = ProcessResult(
             argv=["brew", "info"],
             exit_code=-1,
