@@ -32,15 +32,15 @@ def test_engine_end_to_end_scan(temp_dir: Path) -> None:
     assert session.status == "completed"
     assert session.total_items > 0
 
-    repo = engine.get_repository()
-    latest_sess = repo.get_latest_session()
-    assert latest_sess is not None
-    assert latest_sess.id == session.id
+    with engine.get_repository() as repo:
+        latest_sess = repo.get_latest_session()
+        assert latest_sess is not None
+        assert latest_sess.id == session.id
 
-    projects = repo.list_projects(session.id)
-    assert len(projects) == 1
-    assert projects[0].name == "my_project"
+        projects = repo.list_projects(session.id)
+        assert len(projects) == 1
+        assert projects[0].name == "my_project"
 
-    deps = repo.list_project_dependencies(session_id=session.id)
-    assert len(deps) == 1
-    assert deps[0].name == "express"
+        deps = repo.list_project_dependencies(session_id=session.id)
+        assert len(deps) == 1
+        assert deps[0].name == "express"

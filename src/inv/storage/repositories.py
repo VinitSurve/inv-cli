@@ -1,5 +1,6 @@
 """Repository implementations for database entity persistence and querying."""
 
+import contextlib
 import json
 import sqlite3
 from pathlib import Path
@@ -28,6 +29,18 @@ class InventoryRepository:
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
+
+    def close(self) -> None:
+        """Close the underlying SQLite database connection."""
+        if self.conn:
+            with contextlib.suppress(sqlite3.Error):
+                self.conn.close()
+
+    def __enter__(self) -> "InventoryRepository":
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        self.close()
 
     # ---------------------------------------------------------
     # Sessions
