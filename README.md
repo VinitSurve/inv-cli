@@ -158,6 +158,16 @@ inv export --format html --output inventory.html
 
 ---
 
+## Known Limitations & Scope
+
+To ensure realistic expectations, `inv` operates within defined engineering boundaries:
+- **Discovery Completeness**: macOS does not expose a universal registry of all software. `inv` discovers software via 23 targeted scanners across supported package managers, `$PATH`, `/Applications`, language runtimes, virtual environments, and project manifests. Unregistered or custom binaries in non-standard paths outside `$PATH` are not discovered unless explicitly configured.
+- **Rollback Feasibility**: Rollbacks rely on package manager capabilities and upstream registry availability. If a prior package version was yanked from PyPI/npm or a Homebrew bottle was purged upstream, rollback will require manual intervention.
+- **Vulnerability Data Scope**: Security advisories are fetched live from Google OSV.dev and native tools (`pip-audit`, `npm audit`). Undisclosed zero-days or uncataloged vulnerabilities cannot be detected.
+- **Automation / Headless Environments**: By design, package modifications are rejected in headless non-interactive environments without an interactive TTY. Use `--dry-run` or `inv plan` subcommands in CI/CD.
+
+---
+
 ## Documentation
 
 Detailed documentation is available in the `docs/` directory:

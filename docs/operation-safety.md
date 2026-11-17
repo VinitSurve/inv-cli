@@ -88,3 +88,4 @@ For every executed operation, `inv` records the exact previous state in the `lif
 ```bash
 inv operations info <operation_id>
 ```
+

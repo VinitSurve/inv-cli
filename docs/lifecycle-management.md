@@ -10,12 +10,12 @@ A package manager can be supported for discovery only, or for full lifecycle mod
 
 | Package Manager | ID | Scope | Supported Operations | Rollback Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **Homebrew Formulae** | `brew_formula` | Global / System | `check_outdated`, `install`, `remove`, `upgrade`, `list_versions`, `resolve_dependencies`, `verify_installation` | Best-effort (bottles cleaned up by default) |
+| **Homebrew Formulae** | `brew_formula` | Global / System | `check_outdated`, `install`, `remove`, `upgrade`, `list_versions`, `resolve_dependencies`, `verify_installation` | Best-effort (bottles cleaned up by default upstream) |
 | **Homebrew Casks** | `brew_cask` | Applications | `check_outdated`, `install`, `remove`, `upgrade`, `verify_installation` | Best-effort |
-| **npm** | `npm` | Global | `audit`, `check_outdated`, `install`, `remove`, `upgrade`, `list_versions`, `rollback`, `verify_installation` | Guaranteed via version tag |
-| **pnpm** | `pnpm` | Global | `check_outdated`, `install`, `remove`, `upgrade`, `list_versions`, `rollback`, `verify_installation` | Guaranteed via version tag |
-| **Python pip** | `pip` | Environment | `check_outdated`, `install`, `remove`, `upgrade`, `list_versions`, `rollback`, `verify_installation` | Guaranteed in virtualenv (PEP 668 protected) |
-| **uv** | `uv_tool` | Global Tools | `check_outdated`, `install`, `remove`, `upgrade`, `list_versions`, `rollback`, `verify_installation` | Guaranteed via tool reinstall |
+| **npm** | `npm` | Global | `audit`, `check_outdated`, `install`, `remove`, `upgrade`, `list_versions`, `rollback`, `verify_installation` | High confidence via version pinning (subject to registry availability) |
+| **pnpm** | `pnpm` | Global | `check_outdated`, `install`, `remove`, `upgrade`, `list_versions`, `rollback`, `verify_installation` | High confidence via version pinning (subject to registry availability) |
+| **Python pip** | `pip` | Environment | `check_outdated`, `install`, `remove`, `upgrade`, `list_versions`, `rollback`, `verify_installation` | High confidence in isolated virtualenv (PEP 668 protected) |
+| **uv** | `uv_tool` | Global Tools | `check_outdated`, `install`, `remove`, `upgrade`, `list_versions`, `rollback`, `verify_installation` | High confidence via tool reinstall |
 | **Rust Cargo** | `cargo` | Global Tools | `check_outdated`, `install`, `remove`, `upgrade`, `verify_installation` | Reinstall crate |
 | **Bun** | `bun` | Global | `install`, `remove`, `upgrade`, `verify_installation` | Reinstall |
 | **Yarn** | `yarn` | Global | `install`, `remove`, `upgrade`, `verify_installation` | Reinstall |
@@ -108,3 +108,4 @@ inv operations info op_9b2e1f408a2c
 # Re-verify system state matches recorded operation
 inv operations verify op_9b2e1f408a2c
 ```
+

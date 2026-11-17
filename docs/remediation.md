@@ -105,3 +105,4 @@ inv operations info op_c09e84d2a10f
 - **Python Virtualenv**: Rollback commands are provided (e.g., `pip install requests==2.25.1`).
 - **npm / pnpm / uv**: Previous exact versions are retained in event metadata for 1-command restoration.
 - **Homebrew**: Homebrew bottles are purged by default upstream; `inv` documents specific commit-based or tap-based rollback commands when available.
+
