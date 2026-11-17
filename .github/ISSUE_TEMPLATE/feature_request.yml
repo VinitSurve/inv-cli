@@ -1,0 +1,21 @@
+name: Feature Request
+description: Propose an idea or new package manager scanner for inv
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: Propose a new feature, scanner adapter, or improvement for Inventory CLI.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem or missing package manager does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed Solution
+      description: How should the scanner or feature work?
+    validations:
+      required: true

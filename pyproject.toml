@@ -1,0 +1,127 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "inv"
+version = "1.0.0"
+description = "A comprehensive macOS-first software inventory tool that discovers packages, applications, binaries, programming languages, development environments, project dependencies, and other installed software."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "Vinit", email = "vinit@example.com" }]
+keywords = [
+  "cli",
+  "inventory",
+  "macos",
+  "developer-tools",
+  "package-manager",
+  "applications",
+  "dependencies",
+  "runtimes",
+  "environments",
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
+  "Operating System :: MacOS :: MacOS X",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: System :: Systems Administration",
+  "Topic :: Software Development",
+  "Topic :: Utilities",
+  "Typing :: Typed",
+]
+dependencies = [
+  "typer>=0.12.0",
+  "rich>=13.7.0",
+  "platformdirs>=4.2.0",
+  "pydantic>=2.6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "pytest-cov>=4.1.0",
+  "pytest-timeout>=2.3.0",
+  "ruff>=0.6.0",
+  "mypy>=1.10.0",
+  "build>=1.2.0",
+]
+
+[project.scripts]
+inv = "inv.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/VinitSurve/inv"
+Repository = "https://github.com/VinitSurve/inv"
+Issues = "https://github.com/VinitSurve/inv/issues"
+Documentation = "https://github.com/VinitSurve/inv#readme"
+Changelog = "https://github.com/VinitSurve/inv/blob/main/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/inv"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src",
+  "tests",
+  "docs",
+  "README.md",
+  "LICENSE",
+  "CHANGELOG.md",
+  "CONTRIBUTING.md",
+  "pyproject.toml",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+timeout = 60
+markers = [
+  "slow: tests that take longer to run",
+  "integration: tests that interact with mock environments or filesystem",
+  "security: security and malicious input validation tests",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "C4", "RUF", "PTH"]
+ignore = [
+  "S101",    # assert is used in tests
+  "S110",    # try-except-pass is used intentionally for non-fatal discovery
+  "S112",    # try-except-continue is used intentionally for non-fatal discovery
+  "S603",    # subprocess with argv list is used intentionally
+  "S607",    # partial executable paths resolved safely
+  "SIM108",  # ternary operators
+  "RUF012",  # mutable class attributes
+  "RUF059",  # dummy unpacked variables
+  "PTH115",  # os.readlink is used on symlink paths
+  "PTH123",  # open() is acceptable where appropriate
+  "E501",    # line length handled by formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "S108", "S311", "S603", "S607", "PTH"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["inv"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src"]
+warn_unused_ignores = true
+warn_return_any = true
