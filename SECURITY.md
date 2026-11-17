@@ -25,3 +25,4 @@ If you discover a security vulnerability or a violation of our safety boundaries
 - **Response Target**: Within 48 hours.
 
 Please do not open public GitHub issues for security vulnerabilities until a patch has been coordinated.
+

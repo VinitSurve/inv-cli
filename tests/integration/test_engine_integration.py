@@ -44,3 +44,4 @@ def test_engine_end_to_end_scan(temp_dir: Path) -> None:
     deps = repo.list_project_dependencies(session_id=session.id)
     assert len(deps) == 1
     assert deps[0].name == "express"
+

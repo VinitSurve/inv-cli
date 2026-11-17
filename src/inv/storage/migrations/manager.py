@@ -209,3 +209,4 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?);",
             (1, utc_now_iso()),
         )
+

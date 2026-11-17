@@ -70,3 +70,4 @@ jobs:
           uv venv /tmp/wheel_test
           uv pip install --python /tmp/wheel_test/bin/python dist/*.whl
           /tmp/wheel_test/bin/inv --help
+

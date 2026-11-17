@@ -62,3 +62,4 @@ def parse_version(version_str: str | None) -> ParsedVersion | None:
         prerelease=prerelease,
         raw=version_str,
     )
+

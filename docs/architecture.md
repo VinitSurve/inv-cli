@@ -48,3 +48,4 @@ flowchart TD
 - **`database.py`**: SQLite connection factory configuring WAL (`Write-Ahead Logging`) mode, foreign keys (`PRAGMA foreign_keys = ON`), and immediate transactions.
 - **`migrations/`**: Schema migrations with version tracking table.
 - **`repositories.py`**: Repository abstraction for CRUD operations and universal search.
+

@@ -51,3 +51,4 @@ Total Discovered Items: 3,859 entities in 6.98s
   - `docker`: Docker daemon socket inactive on host.
   - `ide_extensions`: Standard VS Code/Cursor user extension directories absent in current profile.
 - **Failed**: 0 scanners failed.
+

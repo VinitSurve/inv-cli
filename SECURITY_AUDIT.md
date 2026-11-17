@@ -48,3 +48,4 @@ Result: **PASSED (Zero High/Medium Vulnerabilities)**
 
 - **macOS Permissions**: Traversal of user directories like `~/Library` or external volumes may trigger macOS TCC (Transparency, Consent, and Control) prompts. `inv` gracefully handles `PermissionError` and records diagnostic warnings rather than failing.
 - **Read-Only Guarantee**: `inv` contains zero mutation routines (no install, uninstall, or write routines outside its own SQLite database).
+

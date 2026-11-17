@@ -190,3 +190,4 @@ inv export --format html --output inventory.html
 ## License
 
 MIT License. Copyright (c) 2026 Vinit.
+

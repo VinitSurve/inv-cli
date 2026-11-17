@@ -55,3 +55,4 @@
 ### 2.4 Command Injection via Subprocesses
 - **Threat**: Discovered paths or package names contain shell operators (`;`, `|`, `&&`).
 - **Mitigation**: All subprocess calls pass explicit `list[str]` arguments with `shell=False`. Shell interpreters are never invoked.
+

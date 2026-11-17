@@ -22,3 +22,4 @@ def setup_logging(verbose: bool = False) -> None:
     logger.setLevel(level)
     if not logger.handlers:
         logger.addHandler(handler)
+

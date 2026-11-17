@@ -60,3 +60,4 @@ PROBE_ARGUMENTS_MAP = {
 
 If a binary is not registered in this map, `can_probe_version()` returns `False`, and no process is spawned.
 When probed, commands execute with a strict 3.0s timeout and `shell=False`.
+

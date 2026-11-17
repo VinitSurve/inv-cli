@@ -70,3 +70,4 @@ Represents an installed macOS `.app` bundle.
 ### 2.7 ScannerObservation & ScanSession
 - **`ScannerObservation`**: Records duration, status, item counts, warnings, and errors per scanner.
 - **`ScanSession`**: Records scan duration, timestamp, total items, and execution summary.
+

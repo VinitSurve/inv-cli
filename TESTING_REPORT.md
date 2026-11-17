@@ -69,3 +69,4 @@ Status: **100% Passing**
 - **MyPy Type Checking**: `mypy src` passed with 0 issues in 68 source files (strict mode).
 - **Packaging Build**: `python -m build` successfully produced `inv-1.0.0.tar.gz` and `inv-1.0.0-py3-none-any.whl`.
 - **Clean Wheel Install**: Verified wheel installation in an isolated virtual environment.
+

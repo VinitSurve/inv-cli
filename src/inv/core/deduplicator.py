@@ -55,3 +55,4 @@ class Deduplicator:
                 duplicates.append(MultiManagerPackage(name=name, installations=insts))
 
         return sorted(duplicates, key=lambda d: d.name)
+

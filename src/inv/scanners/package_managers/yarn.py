@@ -70,3 +70,4 @@ class YarnGlobalScanner(BaseScanner):
             result.status = ScannerStatus.FAILED
             result.errors.append(f"Error parsing Yarn global output: {exc}")
             return result
+

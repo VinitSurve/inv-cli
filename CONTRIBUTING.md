@@ -59,3 +59,4 @@ mypy src
 3. Ensure all tests, linter checks, and type checks pass cleanly.
 4. Update relevant documentation in `docs/` and `SCANNER_STATUS.md`.
 5. Submit a pull request with a clear description of the problem solved and test evidence.
+

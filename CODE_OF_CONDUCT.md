@@ -21,3 +21,4 @@ Project maintainers are responsible for maintaining the health and constructive 
 ## Reporting Inquiries
 
 To report concerns or violations of this conduct standard, please contact the project maintainer at `vinit@example.com`. All reports will be reviewed promptly and handled with confidentiality.
+

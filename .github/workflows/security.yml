@@ -28,3 +28,4 @@ jobs:
 
       - name: Run Security Tests
         run: pytest tests/security/ -v
+

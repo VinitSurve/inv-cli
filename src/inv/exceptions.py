@@ -36,3 +36,4 @@ class SafeSymlinkError(SecurityViolationError):
 
 class ReconcilerError(InvError):
     """Raised during inventory reconciliation or deduplication."""
+

@@ -19,3 +19,4 @@ body:
       description: How should the scanner or feature work?
     validations:
       required: true
+

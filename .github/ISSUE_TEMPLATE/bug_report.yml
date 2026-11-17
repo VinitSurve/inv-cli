@@ -29,3 +29,4 @@ body:
       description: Run `inv doctor` and paste the output here.
     validations:
       required: true
+

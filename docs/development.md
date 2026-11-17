@@ -51,3 +51,4 @@ To add a new scanner adapter:
 4. Register your scanner in `src/inv/core/registry.py`.
 5. Add unit and contract tests in `tests/contract/` and `tests/integration/`.
 6. Run `ruff format` and `mypy src`.
+

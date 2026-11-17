@@ -18,3 +18,4 @@ Summary of the changes made in this PR.
 - [ ] `ruff format --check src tests` passes
 - [ ] `mypy src` passes in strict mode
 - [ ] Read-only invariants preserved (no arbitrary binary execution)
+

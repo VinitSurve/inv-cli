@@ -32,6 +32,16 @@ venv/
 ENV/
 env/
 
+# Environment variables & secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Local scan reports and exports
+*.html
+*.csv
+
 # Testing & Coverage
 .pytest_cache/
 .coverage

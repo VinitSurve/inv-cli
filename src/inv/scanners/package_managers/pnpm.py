@@ -71,3 +71,4 @@ class PnpmGlobalScanner(BaseScanner):
             result.status = ScannerStatus.FAILED
             result.errors.append(f"Failed to parse pnpm json: {exc}")
             return result
+

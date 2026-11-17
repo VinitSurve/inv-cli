@@ -85,3 +85,4 @@ class ScannerRegistry:
         ]
         for s in default_scanners:
             self.register(s)
+

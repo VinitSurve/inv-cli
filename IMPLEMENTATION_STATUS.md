@@ -62,3 +62,4 @@ During execution on macOS Darwin (Apple Silicon arm64):
 - **PATH Executables**: 2,506 (including 237 duplicate command candidates).
 - **macOS Applications**: 82 `.app` bundles inspected via `Info.plist`.
 - **Runtimes Identified**: 20 distinct runtimes across 7 languages.
+
